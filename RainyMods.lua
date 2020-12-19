@@ -1,14 +1,17 @@
+--[=[
 local modname = "Rainy"
 local M = {}
 _G[modname] = M
 package.loaded[modname] = M
 
-setmetatable(M,{__index = _G})
-setfenv(1,M)
+--setmetatable(M,{__index = _G})
+--setfenv(1,M)
+]=]
 
+M = {}
 -- 读取对应的文件
 -- path -> str ----- 文件路径
-function read_file(path)
+function M.read_file(path)
     path = path or ""
     local text = ""
     local file = io.open(path, "r") -- 打开了文件读写路径
@@ -22,7 +25,7 @@ end
 -- 写入对应的文件
 -- path -> str ----- 文件路径
 -- data -> str ----- 写入内容（全部覆盖写入）
-function write_file(path, data)
+function M.write_file(path, data)
     path = path or "\\"
     data = data or ""
     local file = io.open(path, "w") -- 以只写的方式
@@ -32,13 +35,13 @@ end
 
 
 -- 检测是否为数值
-function isnum(text)
+function M.isnum(text)
     return tonumber(text) ~= nil
 end
 
 -- 打印各正则表达式
 -- Msg  ->  table ----- 为Dice给出聊天信息表
-function printstr(Msg)
+function M.printstr(Msg)
     Msg = Msg or {}
     local resp =""
      for i = 0,(Msg.str_max-1), 1 do
@@ -52,7 +55,7 @@ function printstr(Msg)
 -- Skill_val -> int ----- 技能值
 -- setcoc -> int ----- 当前房规（0~5 详见 Dice！系列官方手册）
 -- （可选 ifReturnNum -> int ） ----- 返回值类型 （0~2 0为纯文本，1为数据[其中1~6从大成功到大失败依次递增]，2 为文本+数据）
-function RAsuccess(total,Skill_val,setcoc,ifReturnNum)
+function M.RAsuccess(total,Skill_val,setcoc,ifReturnNum)
     total = total or 0
     Skill_val = Skill_val or 0
     setcoc = setcoc or 0
@@ -452,3 +455,6 @@ function GetQQState(QQ,Msg)
     return trust
 end
 ]==]
+
+
+return M
