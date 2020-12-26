@@ -7,16 +7,20 @@ package.loaded[modname] = M
 --setmetatable(M,{__index = _G})
 --setfenv(1,M)
 ]=]
-local temppath = dice.DiceDir().."\\temp.txt"
+
 M = {}
 -- 获取对应目标的存档位置（QQ/Group）
 -- target 为目标窗口（QQ or Group）
--- isGroup 为标志，1为群组，0为私聊
+-- isGroup 为标志，1为群组，0为私聊, 2为战斗轮，3为追逐轮
 function M.getPath(target,isGroup)
     isGroup = isGroup or 1
     local userPath = dice.DiceDir()
     if isGroup == 1 then
         userPath = userPath.."\\RainyData\\Group\\Group"..tostring(target)..".json"
+    elseif isGroup == 2 then
+        userPath = userPath.."\\RainyData\\Group\\Combat"..tostring(target)..".json"
+    elseif isGroup == 3 then
+        userPath = userPath.."\\RainyData\\Group\\Chase"..tostring(target)..".json"
     else
         userPath = userPath.."\\RainyData\\QQ\\QQ"..tostring(target)..".json"
     end
@@ -31,38 +35,64 @@ function M.getUserState(target,isGroup)
     local userdata = M.decjson(userPath)
     local ischanged = false
     if isGroup == 1 then
-    if userdata["KP"] == nil or M.isnum(userdata["KP"])==false  then
-        userdata["KP"] = 0
-        ischanged = true
+        if userdata["KP"] == nil or M.isnum(userdata["KP"])==false  then
+            userdata["KP"] = 0
+            ischanged = true
+        end
+        if userdata["Xrastate"] == nil or M.isnum(userdata["Xrastate"])==false  then
+            userdata["Xrastate"] = 0
+            ischanged = true
+        end
+        if userdata["Xstshow"] == nil or M.isnum(userdata["Xstshow"])==false  then
+            userdata["Xstshow"] = 0
+            ischanged = true
+        end
+        if userdata["Xstset"] == nil or M.isnum(userdata["Xstset"])==false  then
+            userdata["Xstset"] = 0
+            ischanged = true
+        end
+        if userdata["Group"] == nil or M.isnum(userdata["Group"])==false  then
+            userdata["Group"] = target
+            ischanged = true
+        end
+        if userdata["Xrasetcoc"] == nil or M.isnum(userdata["Xrasetcoc"])==false  then
+            userdata["Xrasetcoc"] = 0
+            ischanged = true
+        end
+        if userdata["setcoc"] == nil then
+            userdata["setcoc"] = {1,0,1,0,96,0,100,0,50}
+            ischanged = true
+        end
+        if ischanged then
+            M.saveUserState(userdata,target,isGroup)
+        end
     end
-    if userdata["Xrastate"] == nil or M.isnum(userdata["Xrastate"])==false  then
-        userdata["Xrastate"] = 0
-        ischanged = true
+    if isGroup == 2 then
+        local groupdata = M.getUserState(target,1)
+        if userdata["KP"] == nil or M.isnum(userdata["KP"])==false  then
+            userdata["KP"] = groupdata["KP"]
+            ischanged = true
+        end
+        if type(userdata["start"]) ~= "boolean" then        -- 战斗轮是否开始
+            userdata["start"] = false
+            ischanged = true
+        end
+        if type(userdata["round"]) ~= "number" then         -- 当前回合玩家
+            userdata["round"] = 1
+            ischanged = true
+        end
+        if userdata["Group"] == nil or M.isnum(userdata["Group"])==false  then
+            userdata["Group"] = target
+            ischanged = true
+        end
+        if userdata["setcoc"] == nil then
+            userdata["setcoc"] = groupdata["setcoc"]
+            ischanged = true
+        end
+        if ischanged then
+            M.saveUserState(userdata,target,isGroup)
+        end
     end
-    if userdata["Xstshow"] == nil or M.isnum(userdata["Xstshow"])==false  then
-        userdata["Xstshow"] = 1
-        ischanged = true
-    end
-    if userdata["Xstset"] == nil or M.isnum(userdata["Xstset"])==false  then
-        userdata["Xstset"] = 1
-        ischanged = true
-    end
-    if userdata["Group"] == nil or M.isnum(userdata["Group"])==false  then
-        userdata["Group"] = target
-        ischanged = true
-    end
-    if userdata["Xrasetcoc"] == nil or M.isnum(userdata["Xrasetcoc"])==false  then
-        userdata["Xrasetcoc"] = 0
-        ischanged = true
-    end
-    if userdata["setcoc"] == nil then
-        userdata["setcoc"] = {1,0,1,0,96,0,100,0,50}
-        ischanged = true
-    end
-    if ischanged then
-        M.saveUserState(userdata,target,isGroup)
-    end
-end
     return userdata
 end
 -- 保存用户数据
@@ -79,7 +109,6 @@ end
 -- 解析json为table
 function M.decjson(path)
     -- statements
-    path = path or temppath
     local J = require("dkjson")
     local data = M.read_file(path)
     if data == "" then return {} end
@@ -93,7 +122,6 @@ end
 function M.saveTab(data,path)
     -- statements
     data = data or ""
-    path = path or temppath
     local J = require("dkjson")
     local encdata = J.encode (data, { indent = true })
     --local dec = json.decode(data)
@@ -125,8 +153,6 @@ end
 -- path -> str ----- 文件路径
 -- data -> str ----- 写入内容（全部覆盖写入）
 function M.write_file(path, data)
-    path = path or temppath
-    data = data or ""
     local file = io.open(path, "w") -- 以只写的方式
     file.write(file, data) -- 写入内容
     io.close(file) -- 关闭文件
@@ -149,12 +175,22 @@ function M.printstr(Msg)
      return resp
  end
 
+-- 获取数组长度
+function M.table_leng(t)
+    local leng=0
+    if t == nil then return 0 end
+    for k, v in pairs(t) do
+      leng=leng+1
+    end
+    return leng;
+end
+
 function M.Rasuccess(total,val,setcoc)
     setcoc = setcoc or {1,0,1,0,96,0,100,0,50}
     local i = tonumber(setcoc[9])
     local x = total or 0
     local y = val or 0
-    local rank = 0
+    local rank
     if ((y < i) and (x <= tonumber(setcoc[1])+tonumber(setcoc[2])*val)) or ((y >= i) and (x <= tonumber(setcoc[3])+tonumber(setcoc[4])*val)) then
         rank = 1 -- 大成功
     elseif ((y < i) and (x >= tonumber(setcoc[5])+tonumber(setcoc[6])*val)) or ((y >= i) and (x >= tonumber(setcoc[7])+tonumber(setcoc[8])*val)) then
