@@ -16,19 +16,19 @@ command = {}
 command["(\\.|。)(fight|combat)\\s*(start|on)"] = "combatStart"
 -- 参与角色录入
 command["(\\.|。)(fight|combat)\\s*(add)\\s*"] = "combatAdd" -- .combat add
-command["(\\.|。)(fight|combat)\\s*(add)\\s*(\\D[\\w]*?)"] = "combatAddName" -- .fight add [name]
-command["(\\.|。)(fight|combat)\\s*(add)\\s*(\\D[\\w]*?)\\s+([\\d]+?)"] = "combatAddNameDex" -- .fight add [name] [dex]
-command["(\\.|。)(fight|combat)\\s*(add)\\s*(\\D[\\w]*?)\\s+([\\d]+?)\\s+([\\d]+?)"] = "combatAddNameDexFight" -- .fight add [name] [dex] [fight]
-command["(\\.|。)(fight|combat)\\s*(add)\\s*([\\d]+?)"] = "combatAddDex" -- .fight add [dex]
+command["(\\.|。)(fight|combat)\\s*(add)\\s*([^\\s]+?)"] = "combatAddName" -- .fight add [name]
+command["(\\.|。)(fight|combat)\\s*(add)\\s*([^\\s]+?)\\s+([\\d]{1,3})"] = "combatAddNameDex" -- .fight add [name] [dex]
+command["(\\.|。)(fight|combat)\\s*(add)\\s*([^\\s]+?)\\s+([\\d]{1,3})\\s+([\\d]{1,3})"] = "combatAddNameDexFight" -- .fight add [name] [dex] [fight]
+command["(\\.|。)(fight|combat)\\s*(add)\\s*([\\d]{1,3})"] = "combatAddDex" -- .fight add [dex]
 -- 下一回合
 command["(\\.|。)(fight|combat)\\s*(skip|next)"] = "combatNextTurn"
 -- command["(\\.|。|\\\\|\\/)(next)"] = "combatNextTurn" -- \next /next
 -- 战斗轮结束
 command["(\\.|。)(fight|combat)\\s*(stop|off)"] = "combatStop" -- .fight stop
 -- 战斗轮人员移除(PC)
-command["(\\.|。)(fight|combat)\\s*(rm|remove)\\s*(\\[CQ:at,qq=)(\\d{4,})\\]"] = "combatRemovePC" -- .fight rm [at]
+command["(\\.|。)(fight|combat)\\s*(rm|remove)\\s*(\\[CQ:at,qq=)(\\d{4,})\\]\\s*"] = "combatRemovePC" -- .fight rm [at]
 -- 战斗轮人员移除(NPC)
-command["(\\.|。)(fight|combat)\\s*(rm|remove)\\s*(\\D[\\w]*?)"] = "combatRemoveNPC" -- .fight rm [name]
+command["(\\.|。)(fight|combat)\\s*(rm|remove)\\s*([^\\s^\\[\\]]+?)"] = "combatRemoveNPC" -- .fight rm [name]
 -- 清空战斗轮
 command["(\\.|。)(fight|combat)\\s*(clr|clear|reset)"] = "combatClear" -- .combat clr
 -- 显示当前战斗轮参与角色列表
@@ -49,7 +49,8 @@ function combatStart(msg)
         resp = "本群已经开启战斗轮模式，无法再次开启！"
         return resp
     end
-    if type(combat.list) == "table" then
+    local leng = Mod.table_leng(combat.list)
+    if leng >= 1 then
         combat.start = true
         resp = "已开启战斗轮并恢复先前保留战斗轮模式数据！\n"
         resp = resp .. "当前战斗轮回合玩家为：【"..combat.round.."】 "
@@ -92,8 +93,8 @@ function combatAddNameDex(msg)
     if msg.msgType == 0 then
         return "请在群聊中使用该指令"
     end
-    local group = msg.fromGroup
-    local QQ = msg.fromQQ
+    local group = tonumber(msg.fromGroup)
+    local QQ = tonumber(msg.fromQQ)
     local name = msg.str[4]
     local dex = tonumber(msg.str[5])
     combatAddMain(group,name,dex,QQ)
@@ -102,8 +103,8 @@ function combatAddNameDexFight(msg)
     if msg.msgType == 0 then
         return "请在群聊中使用该指令"
     end
-    local group = msg.fromGroup
-    local QQ = msg.fromQQ
+    local group = tonumber(msg.fromGroup)
+    local QQ = tonumber(msg.fromQQ)
     local name = msg.str[4]
     local dex = tonumber(msg.str[5])
     local fight = tonumber(msg.str[6])
@@ -113,8 +114,8 @@ function combatAddDex(msg)
     if msg.msgType == 0 then
         return "请在群聊中使用该指令"
     end
-    local group = msg.fromGroup
-    local QQ = msg.fromQQ
+    local group = tonumber(msg.fromGroup)
+    local QQ = tonumber(msg.fromQQ)
     local name = dice.getPcName(QQ,group)
     local dex = tonumber(msg.str[4])
     local fight = dice.getPcSkill(QQ,group,"斗殴")
@@ -128,19 +129,20 @@ function combatAddMain(group,name,dex,qq,fight)
     local resp = "添加角色【"..name.."】成功！\n"
     if combat.start == false then
         dice.send("当前战斗轮已关闭，请开启后使用！",group,1)
-        return
+        return nil
     end
     local s = 1
     while s <= Mod.table_leng(combat.list) do
         if combat.list[s]["name"] == name then
-            resp = "设置战斗轮新角色失败！\n"..""
-            dice.send("当前战斗轮已关闭，请开启后使用！",group,1)
-            return
+            resp = "设置战斗轮新角色失败！\n"
+            resp = resp.. "该名称【"..name.."】已经存在"
+            dice.send(resp,group,1)
+            return nil
         end
         s = s+1
     end
     fight = tonumber(fight) or 0
-    table.insert(combat["list"],{name = name , QQ = tonumber(qq) ,Dex = tonumber(dex),Fight = tonumber(fight) })
+    table.insert(combat["list"],{name = name , QQ = tonumber(qq) ,Dex = tonumber(dex),fight = tonumber(fight) })
     table.sort(combat["list"],function (a, b)
         if a.Dex == b.Dex then 
             a.fight =a.fight or 0
@@ -209,7 +211,7 @@ function combatClear(msg)
     end
     local group = msg.fromGroup
     local combat = Mod.getUserState(group,2)
-    combat.list = nil
+    combat.list = {}
     combat.round = 1
     combat.start = false
     Mod.saveUserState(combat,group,2)
@@ -232,6 +234,12 @@ function combatStop(msg)
 end
 
 function combatRemovePC(msg)
+    local resp
+    local QQ = tonumber(msg.str[5])
+    local group = tonumber(msg.fromGroup)
+    local s = 1
+    local count = 0
+    local del = 0
     if msg.msgType == 0 then
         return "请在群聊中使用该指令"
     end
@@ -239,12 +247,7 @@ function combatRemovePC(msg)
     if combat.start == false then
         return "当前战斗轮已关闭，请开启后使用！"
     end
-    local resp
-    local QQ = tonumber(msg.str[5])
-    local group = tonumber(msg.fromGroup)
-    local s = 1
-    local count = 0
-    local del = 0
+
     while s <= Mod.table_leng(combat.list) do
         if combat.list[s]["QQ"] == QQ then
             count = count + 1
@@ -253,7 +256,7 @@ function combatRemovePC(msg)
         s = s+1
     end
     if count > 1 then
-        resp = "你有多个角色正在参与战斗论，请使用 .combat rm [角色名] 进行删除!"
+        resp = "有多个角色正在参与战斗论，请使用 .combat rm [角色名] 进行删除!"
             return resp
     elseif count == 0 then
         resp = "你没有角色正参与战斗论，无法删除！"
@@ -267,21 +270,21 @@ function combatRemovePC(msg)
     local leng = Mod.table_leng(combat.list)
     if leng <= 1 then
         combat.round = 1
-        combat.list = nil
+        combat.list = {}
         combat.start = false
         Mod.saveUserState(combat,group,2)
         resp = resp .. "当前战斗轮列表无角色！\n"
         resp = resp .. "已自动关闭战斗论模式！如需使用请重新开启！"
         return resp
-    elseif leng > 1 then
+    else
         if combat.round > del then
             combat.round = combat.round - 1
         end
     end
 
     if del >= 1 and del <= leng then 
-        combat.list[del] , combat.list[leng] = combat.list[leng],nil 
-    else 
+        combat.list[del] , combat.list[leng] = combat.list[leng] , nil
+    else
         return "未知错误！\ndel = "..tostring(del).." ; leng = "..tostring(leng)
     end
 
@@ -307,21 +310,24 @@ function combatRemoveNPC(msg)
     if msg.msgType == 0 then
         return "请在群聊中使用该指令"
     end
-    local combat = Mod.getUserState(group,2)
-    if combat.start == false then
-        return "当前战斗轮已关闭，请开启后使用！"
-    end
-    local resp
+    
+
+    local resp = ""
     local name = msg.str[4]
     local group = tonumber(msg.fromGroup)
+    local combat = Mod.getUserState(group,2)
     local s = 1
     local count = 0
     local del = 0
+    if combat.start == false then
+               return "当前战斗轮已关闭，请开启后使用！"
+    end
     while s <= Mod.table_leng(combat.list) do
         if combat.list[s]["name"] == name then
             count = count + 1
             del = s
         end
+        
         s = s+1
     end
     if count > 1 then
@@ -339,7 +345,7 @@ function combatRemoveNPC(msg)
     local leng = Mod.table_leng(combat.list)
     if leng <= 1 then
         combat.round = 1
-        combat.list = nil
+        combat.list = {}
         combat.start = false
         Mod.saveUserState(combat,group,2)
         resp = resp .. "当前战斗轮列表无角色！\n"
