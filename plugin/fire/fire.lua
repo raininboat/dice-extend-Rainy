@@ -1,4 +1,3 @@
-local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
 --[=[
 #      _____       _
 #     |  __ \     (_)
@@ -9,8 +8,10 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
 #                           __/ |
 #                          |___/
     向火独行 V0.1  by 雨鸣于舟 20210606
-    （独立版本） 需使用dkjson库
+    （独立版本 已内置Rainy.lua RD.lua等功能模块） 需使用dkjson库
 
+        已完成  .fra 技能检定（对抗）功能
+                .fsc 理智检定功能
         当前测试部分内容
     ]=]
     command = {}
@@ -18,11 +19,18 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
     command["(\\.|。)(fire)"] = "firehelp"
     -- 开始
     command["(\\.|。)(fire)\\s*(start)"] = "fireStart"
+    command["(\\.|。)(fire)\\s*(start)"] = "fireStop"
+    command["(\\.|。)(fire)\\s*(start)"] = "fireRestart"
     -- 所有指令类型
     command["(\\.|。|\\/)(goto)\\s*(\\d+)"] = "gotoRaw" -- .goto 123 前往页面123
     command["(\\.|。)(fra|ra)\\s*([bBpP]\\d?)?\\s*([\\D]+)?\\s*([\\d]*)"] = "fra" -- .ra(p) 斗殴 (60)
     command["(\\.|。)(fsc|sc)\\s*([0-9dD\\-\\+\\*\\(\\)]+)(/)([0-9dD\\-\\+\\*\\(\\)]+)"] = "fsc" -- .fsc 1/1d3
-
+    command["(\\.|。)(repeat)"] = "frepeat" -- 复读
+    command["(\\.|。|\\/)(fgoto)\\s*(\\d+)"] = "gotoForced" -- 强制翻页，用于测试
+    
+    function firehelp(msg)
+        return "test"
+    end
 
     -- 自定义函数部分 (Rainy.lua)
     basic_path = dice.DiceDir()
@@ -223,8 +231,7 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
     
     -- 获取向火独行数据模块
     local FireData = M.decjson(basic_path.."\\RainyData\\fire\\firedata.json")
-    -- 前往下一节点
-    --[[
+    -- 具体前往下一节点
     local function gotoNextPoint(playerState,nextPoint)
         local point = tostring(nextPoint)
         local nowData = FireData[point]
@@ -250,13 +257,10 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         end
         M.saveUserState(playerState,playerState.QQ,4)
         text = nowData.text or ""
-        dice.send(nextpiont,775897127,1)
         return true , text
     end
-    ]]
-    function firehelp(msg)
-        return "1214"
-    end
+    
+
     -- 开始游戏
     function fireStart(msg)
         local QQ = msg.fromQQ
@@ -277,7 +281,57 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         resp = resp .. text
         return resp
     end
-
+    -- 关闭游戏
+    function fireStop(msg)
+        local QQ = msg.fromQQ
+        local playerState = M.getUserState(QQ, 4)
+        if playerState["isFireStarted"] == false then
+            return "向火独行模块已经关闭"
+        else
+            playerState["isFireStarted"] = false
+            M.saveUserState(playerState,QQ,4)
+        end
+        local resp = "已保存并关闭向火独行模块！\n.fire start 再次开始游戏\n.fire stop 暂停游戏 \n.fire restart 重启游戏\n.goto [数字] 翻页\f"
+        return resp
+    end
+    -- 重启游戏
+    function fireRestart(msg)
+        local QQ = msg.fromQQ
+        local playerState = {
+            ["QQ"] = msg.fromQQ,
+            ["point"] = 1,
+            ["isFireStarted"] = true,
+            ["setcoc"] = {1,0,1,0,96,0,100,0,50}
+        }
+        local resp = "已重置向火独行模块！\n.fire start 开始游戏\n.fire stop 暂停游戏 \n.fire restart 重启游戏\n.goto [数字] 翻页\f"
+        local point = "1"
+        local text = ""
+        M.saveUserState(playerState,QQ,4)
+        if type(FireData[point]["text"]) ~= "nil" then
+            text = FireData[point]["text"]
+        end
+        resp = resp .. "当前页面【"..string.sub(point,-3,-1).."】\n"
+        resp = resp .. text
+        return resp
+    end
+    function frepeat(msg)
+        local QQ = msg.fromQQ
+        local playerState = M.getUserState(QQ,4)
+        if playerState["isFireStarted"] == false then
+            return "当前向火独行模块已关闭！\n请先使用.fire start 开始游戏！"
+        end
+        local point = tostring(playerState["point"])
+        local nowData = FireData[point]
+        if nowData.type == "once" then
+            local nextPoint  = nowData.autogoto
+            local status , text = gotoNextPoint(playerState,nextPoint)
+            if status == false then
+                return "未知错误，请重置游戏！"
+            end
+            return text
+        end
+        return nowData.text
+    end
     -- 开始游戏
     function gotoRaw(msg)
         local QQ = msg.fromQQ
@@ -287,13 +341,13 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         end
         local point = tostring(playerState["point"])
         local fGoto = msg.str[3]
-        local text = ""
+       -- local text = ""
         local nowData = FireData[point]
         local nextData = FireData[fGoto]
         local isAvailable = false       -- 可以前往目标页
 
         -- 判断各类节点类型
-        if nowData["type"] == "norm" or nowData["type"] == "once" then               -- 标准节点 norm
+        if nowData["type"] == "norm" then               -- 标准节点 norm
             if nowData["to"] ~= nil then
                 for i = 1, #nowData["to"] do
                     -- statements
@@ -316,8 +370,8 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                         isAvailable = true
                     end
                 end
-                if not isAvailable and nowData["hist"]["lowerr"][fGoto] ~= nil then
-                    return "当前位置【"..string.sub(point,-3,-1).."】\n"..nowData["hist"]["lowerr"][fGoto]
+                if not isAvailable and nowData["hist"]["lower"][fGoto] ~= nil then
+                    return "当前位置【"..string.sub(point,-3,-1).."】\n"..nowData["hist"]["lower"][fGoto]
                 elseif not isAvailable then
                     return "当前位置【"..string.sub(point,-3,-1).."】\n你无法前往目标页面"
                 end
@@ -328,13 +382,13 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                         isAvailable = true
                     end
                 end
-                if not isAvailable and nowData["hist"]["higherr"][fGoto] ~= nil then
-                    return "当前位置【"..string.sub(point,-3,-1).."】\n"..nowData["hist"]["higherr"][fGoto]
+                if not isAvailable and nowData["hist"]["higher"][fGoto] ~= nil then
+                    return "当前位置【"..string.sub(point,-3,-1).."】\n"..nowData["hist"]["higher"][fGoto]
                 elseif not isAvailable then
                     return "当前位置【"..string.sub(point,-3,-1).."】\n你无法前往目标页面"
                 end
             end
-        elseif nowData["type"] == "san"  or nowData["type"] == "fight" then
+        elseif nowData["type"] == "fight" then
             -- 暂时懒得搞这些，就先全部放了
             isAvailable = true
         else
@@ -342,14 +396,31 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         end
         -- 检测下一节点是否可以进入
         if isAvailable then
-
+            if nextData.type == "once" and playerState["exp"..fGoto] ~= nil then
+                return "你已经去过那里了，无法再次进入！"
+            end
         else
             return "你无法前往那里"
         end
-        return "1"
+        local status ,text = gotoNextPoint(playerState,fGoto)
+        if status == false then
+            return "你无法前往那里!"..text
+        end
+        return text
     end
 
-
+    function gotoForced(msg)
+        -- statements
+        local QQ = msg.fromQQ
+        local playerstate = M.getUserState(QQ,4)
+        local fgoto = msg.str[3]
+        local status,text = gotoNextPoint(playerstate,fgoto)
+        if status == false then
+            playerstate = M.getUserState(QQ,4)
+            return "发生错误！当前playerstate:\n"..M.tabletostring(playerstate)
+        end
+        return text
+    end
     function fra(msg)
         local group = msg.fromGroup
         local QQ = msg.fromQQ
@@ -642,15 +713,12 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                 return resp
             else
                 playerstate.point = result.nextPoint       -- 设置前往下一节点
-                point = result.nextPoint
-                nowData = FireData[point]
-                if nowData.log ~= nil and playerstate[nowData.log] == 0 then
-                    playerstate[nowData.log] = 1
-                elseif nowData.log ~= nil then
-                    playerstate[nowData.log] = playerstate[nowData.log] +1
+                local err,text = gotoNextPoint(playerstate,result.nextPoint)
+                if err == false then
+                    return "错误！"..text
+                else
+                    resp = resp .. "\f"..text
                 end
-                M.saveUserState(playerstate,QQ,4)       -- 保存用户数据
-                resp = resp .."\f"..result.text.. nowData.text
                 return resp
             end
         end
@@ -658,8 +726,6 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         if nowData.type ~= "ra" and nowData.type ~= "rv" or playerstate.isFireStarted == false then
             return resp
         end
-        -- ###########################
-        dice.send(resp,775897127,1)
         if nowData[skillName] == nil then
             resp = resp .. "\f检定技能与需求技能不符！应检定【"
             if type(nowData.skill) == "string" then
@@ -703,19 +769,16 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                 resp = resp .."\f"
             end
             playerstate.point = nextPoint       -- 设置前往下一节点
-            point = tostring(nextPoint)
-            nowData = FireData[point]
-            if nowData.log ~= "nil" and playerstate[nowData.log] == 0 then
-                playerstate[nowData.log] = 1
-            elseif nowData.log ~= "nil" then
-                playerstate[nowData.log] = playerstate[nowData.log] +1
+            local err,text = gotoNextPoint(playerstate,nextPoint)
+            if err == false then
+                return "错误！"..text
+            else
+                resp = resp .. "\f"..text
             end
-            M.saveUserState(playerstate,QQ,4)       -- 保存用户数据
-            resp = resp .."\f".. nowData.text
             return resp
         end
 
-        -- rx节点前往下一格
+        -- rv节点前往下一格
         if nowData.type == "rv" then
 
             -- npc 检定
@@ -817,6 +880,15 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                 end
             end
             playerstate.point = nextPoint       -- 设置前往下一节点
+            local err,text = gotoNextPoint(playerstate,nextPoint)
+            if err == false then
+                return "错误！"..text
+            else
+                resp = resp .. "\f"..text
+            end
+            return resp
+--[[        旧版本跳转，先留着谁知道呢
+            playerstate.point = nextPoint       -- 设置前往下一节点
             point = tostring(nextPoint)
             nowData = FireData[point]
             if nowData.log ~= "nil" and playerstate[nowData.log] == 0 then
@@ -827,14 +899,348 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
             M.saveUserState(playerstate,QQ,4)       -- 保存用户数据
             resp = resp .."\f".. nowData.text
             return resp
+            ]]
         end
         return resp
     end
 
     -- SANCHECK! 理智检定部分
     function fsc(msg)
-        local successExpression = msg.str[3]
-        local failExpression = msg.str[5]
+        --[[四则运算实现部分，详见Rd]]
+        --[[
+        #      _____       _
+        #     |  __ \     (_)
+        #     | |__) |__ _ _ _ __  _   _
+        #     |  _  // _` | | '_ \| | | |
+        #     | | \ \ (_| | | | | | |_| |
+        #     |_|  \_\__,_|_|_| |_|\__, |
+        #                           __/ |
+        #                          |___/
+
+            RD 功能      by 雨鸣于舟 20210102
+            （计算器）
+            栈和逆波兰表达式的使用
+        ]]
+        local RD = {version = "DiceRD_1.1 by Rainy"}
+
+        -- 堆栈实现部分
+        local Stack = {}
+
+        -- 创建新堆栈
+        -- int为堆栈长度，（nil）则为不限制
+        function Stack:Create(MaxSize)
+            local S = {}
+            setmetatable(S,{ __index = self })
+            S[0] = 0 -- 栈顶位置，0 为空栈
+            S["Type"] = "Stack"
+            if type(MaxSize) == "number" then
+                assert(MaxSize >= 1 , "失败！Stack:Pop(number)中number位置必须为正整数！" )
+                S["MaxSize"] = MaxSize
+            end
+            return S
+        end
+        -- 将栈清空
+        function Stack:Clear()
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            if self.MaxSize then
+                self = Stack:Create(self.MaxSize)
+            else
+                self = Stack:Create()
+            end
+        end
+        -- 查询是否为空栈，若空则返回True，其余为False
+        function Stack:isEmpty()
+            self = self or {}
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            if self[0] == 0 then
+                return true
+            else
+                return false
+            end
+        end
+
+        -- 查询是否为栈满，若满则返回True，其余为False
+        function Stack:isFull()
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            if self[0] == self["MaxSize"] then
+                return true
+            else
+                return false
+            end
+        end
+
+        -- 将元素弹出栈
+        function Stack:Get()
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+
+            local max = self[0]            -- 栈顶指针
+            local output
+            if max >= 1 then        -- 判断是否为空栈
+                output = self[max]
+            else                    -- 空栈输出nil
+                output = nil
+            end
+            return output
+        end
+
+        -- 将元素压入栈内
+        -- S 为栈
+        -- e 为元素
+        function Stack:Push(e)
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            --[[if self[0] == self["MaxSize"] then
+                error("失败！堆栈溢出！",2)
+                return nil
+            end]]
+
+            self[0] = self[0] + 1
+            self[self[0]] = e
+        end
+
+        -- 将元素弹出栈
+        -- S 为栈
+        -- number 可选 为弹出数量，若不为 1 则从栈顶向栈底逆序弹出
+        function Stack:Pop(number)
+            number = number or 1
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            assert(number > 0 , "失败！Stack:Pop(number)中number位置必须为正整数！" )
+            local max = self[0]            -- 栈顶指针
+            local output = {}
+            for i = 1, number, 1 do
+                max = self[0]
+                if max >= 1 then
+                    table.insert(output, #output+1 , self[max])
+                    self[max] = nil
+                    self[0] = max - 1
+                else
+                    output[i] = nil
+                end
+            end
+            return table.unpack(output)
+        end
+        -- 获取堆栈元素数量
+        function Stack:Length()
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            local length = self[0]
+            return length
+        end
+
+        -- 调整堆栈最大值
+        -- S 为堆栈
+        -- MaxSize 可选 为空则为无限
+        function Stack:changeMax(MaxSize)
+            if self["Type"] ~= "Stack" then
+                error("失败！输入数据不是栈！请使用Stack.Create创建栈",2)
+                return nil
+            end
+            if type(MaxSize) == "nil" then
+                self["MaxSize"] = nil
+                return self
+            end
+            if type(MaxSize) == "number" then
+                if MaxSize >= self[0] then
+                    self["MaxSize"] = MaxSize
+                    return self
+                else
+                    error("堆栈大小重设置失败，目标大小小于栈内元素数量！",2)
+                    return nil
+                end
+            end
+        end
+
+        -- ################################################################
+        -- 逆波兰表达式部分
+
+        local function RPNchange(Input)
+            -- 符号优先级
+            local calsign = {
+                ["$"] = 0 , ["("] = 0 ,
+                ["+"] = 1 , ["-"] = 1 ,
+                ["*"] = 2 , ["/"] = 2 ,
+                ["d"] = 3 , ["D"] = 3 ,
+            }
+            -- 数字
+            local calnum = {
+                ["1"] = 1 , ["2"] = 2 ,
+                ["3"] = 3 , ["4"] = 4 ,
+                ["5"] = 5 , ["6"] = 6 ,
+                ["7"] = 7 , ["8"] = 8 ,
+                ["9"] = 9 , ["0"] = 0
+            }
+            local Calculate = {}
+            local Sign = Stack:Create()
+            Sign:Push("$")
+            local tmp 
+            local number = nil
+            local strleng = string.len(Input)
+            for i = 1, strleng, 1 do
+                tmp = string.sub(Input,i,i)
+                if calnum[tmp] then
+                    number = number or 0
+                    number = number * 10 +calnum[tmp]
+                elseif tmp == "(" then
+                    if type(number) == "number" then
+                        table.insert(Calculate,#Calculate+1,number)
+                        number = nil
+                    end
+                    Sign:Push("(")
+                elseif tmp == " " then
+                    -- skip
+                elseif calsign[tmp] then
+                    if type(number) == "number" then
+                        table.insert(Calculate,#Calculate+1,number)
+                        number = nil
+                    end
+                    local lastSign = Sign:Get()
+                    if lastSign ~= "(" then
+                        -- 当前运算符和栈顶运算符比较优先级
+                        while calsign[tmp] <= calsign[lastSign] do
+                            table.insert(Calculate,#Calculate+1,Sign:Pop())
+                            lastSign = Sign:Get()
+                            if lastSign == "$" then
+                                break
+                            end
+                        end
+                    end
+                    Sign:Push(tmp)
+                elseif tmp == ")" then
+                    if type(number) == "number" then
+                        table.insert(Calculate,#Calculate+1,number)
+                        number = nil
+                    end
+                    local lastSign = Sign:Get()
+                    while lastSign ~= "(" do
+                        if lastSign == "$" then
+                            error("括号不匹配！",2)
+                            return nil
+                        end
+                        table.insert(Calculate,#Calculate+1,Sign:Pop())
+                        lastSign = Sign:Get()
+                    end
+                    Sign:Pop()
+                else
+                    if type(number) == "number" then
+                        table.insert(Calculate,#Calculate+1,number)
+                        number = nil
+                    end
+
+                    while Sign:Get() ~= "$" do
+                        if Sign:Get() == "(" then
+                            error("四则运算表达式错误！",2)
+                            return nil
+                        end
+                        table.insert(Calculate,#Calculate+1,Sign:Pop())
+                    end
+                    break
+                end
+            end
+            if type(number) == "number" then
+                table.insert(Calculate,#Calculate+1,number)
+                number = nil
+            end
+            while Sign:Get() ~= "$" do
+                if Sign:Get() == "(" then
+                    error("四则运算表达式错误！",2)
+                    return nil
+                end
+                table.insert(Calculate,#Calculate+1,Sign:Pop())
+            end
+            return Calculate
+        end
+
+        local function RPNcal(cal)
+            -- xDy 运算 （x个1Dy）
+            local function Rand(x,y)
+                x = x or 1
+                y = y or 1
+                local result = 0
+                result = dice.rd(x.."D"..y)
+                --[[ lua 自带随机数生成器效果一般，所以改用dice生成随机数
+                    设置随机数种子
+                math.randomseed(os.time())
+                for i = 1, x, 1 do
+                    result = result + math.random(y)
+                end]]
+                return result
+            end
+            local a = Stack:Create()
+            local x = 0
+            local y = 0
+            local tmp
+            local res = 0
+            local calsign = {
+                ["+"] = 1 , ["-"] = 1 ,
+                ["*"] = 2 , ["/"] = 2 ,
+                ["d"] = 3 , ["D"] = 3 ,
+            }
+            for i = 1,#cal,1 do
+                tmp = cal[i]
+                if type(tmp) == "number" then
+                    a:Push(tmp)
+                    tmp = nil
+                elseif calsign[tmp] then
+                    y , x = a:Pop(2)
+                    -- x = a:Pop()
+                    if x == nil then 
+                        error("后缀表达式计算发生错误！",2)
+                        return y
+                    end
+                    -- 计算
+                    if tmp == "+" then
+                        res = x + y
+                        a:Push(res)
+                    elseif tmp == "-" then
+                        res = x - y
+                        a:Push(res)
+                    elseif tmp == "*" then
+                        res = x * y
+                        a:Push(res)
+                    elseif tmp == "/" then
+                        res = x / y
+                        a:Push(res)
+                    elseif tmp == "D" or tmp == "d" then
+                        res = Rand(x,y)
+                        a:Push(res)
+                    end
+                    tmp = nil
+                else
+                    break
+                end
+            end
+            return a:Pop()
+        end
+
+        function RD.cal(text)
+            local cal = RPNchange(text)
+            local result = RPNcal(cal)
+            return result
+        end
+
+
+
+        local successExpression = string.lower(msg.str[3])
+        local failExpression = string.lower(msg.str[5])
         local QQ = msg.fromQQ
         local group = msg.fromGroup
         local resp = dice.getPcName(QQ,group).."进行理智检定：\n"
@@ -843,11 +1249,11 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
         local rollResult = dice.rd("1D100")
         local sanLose = 0
         -- 需使用RD.lua 四则运算算法实现
-        --local RD = require("RD")
+        local RD = require("RD")
         local scResult 
         if rollResult <= san then
             local err = ""
-            sanLose,err = pcall(RD.cal,successExpression)
+            err,sanLose = pcall(RD.cal,successExpression)
             if not sanLose then
                 resp = "表达式错误！请检查对应表达式x\n 错误信息："..err
                 return resp
@@ -859,9 +1265,9 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
             scResult = true
         else
             local err = ""
-            sanLose,err = pcall(RD.cal,failExpression)
-            if not sanLose then
-                resp = "表达式错误！请检查对应表达式x\n 错误信息："..err
+            err,sanLose= pcall(RD.cal,failExpression)
+            if not err then
+                resp = "表达式错误！请检查对应表达式x\n 错误信息："..sanLose
                 return resp
             end
             resp = resp .. "D100 = ".. tostring(rollResult).."/"..san.." 失败！\n"
@@ -870,13 +1276,15 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
             resp = resp .. "当前理智："..san
             scResult = false
         end
-        dice.setPcSkill(QQ,group,"san",san)     -- 写入人物卡
-        -- return resp                          -- 标准sc流程结束
 
         -- 节点判断部分
         local playerState = M.getUserState(QQ,4)
         local point = tostring(playerState.point)
         local nowData = FireData[point]
+        if playerState.isFireStarted == false then
+            dice.setPcSkill(QQ,group,"san",san)     -- 写入人物卡
+            return resp                          -- 标准sc流程结束
+        end
         -- 特殊节点处理
         if nowData.type == "lualib" then
             local filename = "firelib"..tostring(point)
@@ -892,21 +1300,45 @@ local RD = require "d:.Rainy.DICE.MIRAI2.Dice3614566160.plugin.lib.RD"
                 return resp
             else
                 playerState.point = result.nextPoint       -- 设置前往下一节点
-                point = result.nextPoint
-                nowData = FireData[point]
-                if nowData.log ~= nil and playerState[nowData.log] == 0 then
-                    playerState[nowData.log] = 1
-                elseif nowData.log ~= nil then
-                    playerState[nowData.log] = playerState[nowData.log] +1
+                local err,text = gotoNextPoint(playerState,result.nextPoint)
+                if err == false then
+                    return "错误！"..text
+                else
+                    resp = resp .. "\f"..text
                 end
-                M.saveUserState(playerState,QQ,4)       -- 保存用户数据
-                resp = resp .."\f"..result.text.. nowData.text
                 return resp
             end
         end
+        -- 判断其他节点直接结束
         if nowData.type ~= "san" then
+            return "当前你无法这么做，如果需要sc请先使用【.fire stop】关闭向火独行模块x"
+        end 
+        local scGoto,scText = 0,""
+        local reqSuccessExpression,reqFailExpression = nowData.san.sc[1],nowData.san.sc[2]
+        if reqSuccessExpression ~= successExpression or reqFailExpression ~= failExpression then
+            resp = "SC表达式错误x\n应为【.fsc "..reqSuccessExpression.."/"..reqFailExpression.."】"
             return resp
         end
-
+        if scResult then
+            scGoto = nowData.san.scgoto[1]
+            scText = nowData.san.sctext[1]
+        else
+            scGoto = nowData.san.scgoto[2]
+            scText = nowData.san.sctext[2]
+        end
+        if scText ~= "" then
+            resp = resp .."\f"..scText
+        end
+        resp = resp .."\f"
+        -- 设置前往下一节点
+        local err,text = gotoNextPoint(playerState,scGoto)
+        if err == false then
+            return "错误！"..text
+        else
+            resp = resp .. "\f"..text
+        end
+        dice.setPcSkill(QQ,group,"san",san)     -- 写入人物卡
         return resp
     end
+
+
