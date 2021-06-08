@@ -7,9 +7,10 @@
 #     |_|  \_\__,_|_|_| |_|\__, |
 #                           __/ |
 #                          |___/
-    战斗轮回合提醒  by 雨鸣于舟 20201226
+    战斗轮回合提醒 V1.1  by 雨鸣于舟 20210530
     （独立版本） 需使用dkjson库
 
+        修复了部分bug，增加了简易help文档
     ]=]
 command = {}
 -- 战斗轮开始
@@ -21,7 +22,7 @@ command["(\\.|。)(fight|combat)\\s*(add)\\s*([^\\s]+?)\\s+([\\d]{1,3})"] = "com
 command["(\\.|。)(fight|combat)\\s*(add)\\s*([^\\s]+?)\\s+([\\d]{1,3})\\s+([\\d]{1,3})"] = "combatAddNameDexFight" -- .fight add [name] [dex] [fight]
 command["(\\.|。)(fight|combat)\\s*(add)\\s*([\\d]{1,3})"] = "combatAddDex" -- .fight add [dex]
 -- 下一回合
-command["(\\.|。)(fight|combat)\\s*(skip|next)"] = "combatNextTurn"
+command["(\\.|。)(fight|combat)\\s*(skip|next)"] = "combatNextTurn" -- .fight next
 -- command["(\\.|。|\\\\|\\/)(next)"] = "combatNextTurn" -- \next /next
 -- 战斗轮结束
 command["(\\.|。)(fight|combat)\\s*(stop|off)"] = "combatStop" -- .fight stop
@@ -35,6 +36,8 @@ command["(\\.|。)(fight|combat)\\s*(clr|clear|reset)"] = "combatClear" -- .comb
 command["(\\.|。)(fight|combat)\\s*(show)"] = "combatShow" -- .combat show
 -- 战斗轮功能设置
 
+-- 战斗轮help
+command["(\\.|。)(fight|combat)\\s*(help)"] = "combatHelp" -- .combat help
 
 
 
@@ -369,6 +372,10 @@ function combatShow(msg)
         return "当前战斗轮已关闭，请开启后使用！"
     end
     local resp
+    local leng = Mod.table_leng(combat.list)
+    if leng == 0 then
+        return "当前战斗轮为空，请先使用.combat add 添加角色！"
+    end
     resp = "当前战斗轮回合角色为：【" .. combat.round .. "】 "
     resp = resp .. combat.list[combat.round]["name"] .. " (" .. combat.list[combat.round]["QQ"] .. ")\n"
     resp = resp .. "### 当前战斗角色列表：\n"
@@ -389,18 +396,18 @@ function combatNextTurn(msg)
         return "当前战斗轮已关闭，请开启后使用！"
     end
     local resp
+    local leng = Mod.table_leng(combat.list)
+    if leng == 0 then
+        return "当前战斗轮为空，请先使用.combat add 添加角色！"
+    end
     resp = "角色 【" .. combat.list[combat.round]["name"] .. "】(" .. combat.list[combat.round]["QQ"] .. ") 的回合结束\n"
     combat.round = combat.round + 1
-    local leng = Mod.table_leng(combat.list)
+
     if combat.round > leng then
         combat.round = 1
     end
-    resp =
-        resp ..
-        "角色 [" ..
-            combat.round ..
-                "] 【" .. combat.list[combat.round]["name"] .. "】 [CQ:at,qq=" .. combat.list[combat.round]["QQ"]
-    resp = resp .. "] 回合开始！\f"
+    resp = resp .. "角色 [" .. combat.round .. "] 【" .. combat.list[combat.round]["name"] .. "】 [CQ:at,qq="
+    resp = resp .. combat.list[combat.round]["QQ"] .. "] 回合开始！\f"
     resp = resp .. "### 当前战斗角色列表：\n"
     for i = 1, leng, 1 do
         resp = resp .. "[" .. i .. "] " .. combat.list[i]["name"] .. " ("
@@ -452,6 +459,10 @@ function combatRemovePC(msg)
     if combat.start == false then
         return "当前战斗轮已关闭，请开启后使用！"
     end
+    local leng = Mod.table_leng(combat.list)
+    if leng == 0 then
+        return "当前战斗轮为空，请先使用.combat add 添加角色！"
+    end
 
     while s <= Mod.table_leng(combat.list) do
         if combat.list[s]["QQ"] == QQ then
@@ -472,7 +483,7 @@ function combatRemovePC(msg)
     end
     resp = "删除战斗论列表角色【" .. combat.list[del]["name"] .. "】成功！\n"
 
-    local leng = Mod.table_leng(combat.list)
+    leng = Mod.table_leng(combat.list)
     if leng <= 1 then
         combat.round = 1
         combat.list = {}
@@ -487,8 +498,10 @@ function combatRemovePC(msg)
         end
     end
 
-    if del >= 1 and del <= leng then
+    if del >= 1 and del < leng then
         combat.list[del], combat.list[leng] = combat.list[leng], nil
+    elseif del == leng then
+        combat.list[leng] = nil
     else
         return "未知错误！\ndel = " .. tostring(del) .. " ; leng = " .. tostring(leng)
     end
@@ -529,6 +542,11 @@ function combatRemoveNPC(msg)
     if combat.start == false then
         return "当前战斗轮已关闭，请开启后使用！"
     end
+    local leng = Mod.table_leng(combat.list)
+    if leng == 0 then
+        return "当前战斗轮为空，请先使用.combat add 添加角色！"
+    end
+
     while s <= Mod.table_leng(combat.list) do
         if combat.list[s]["name"] == name then
             count = count + 1
@@ -547,9 +565,9 @@ function combatRemoveNPC(msg)
         resp = "你没有角色正参与战斗论，无法删除！"
         return resp
     end
-    resp = "删除战斗论列表角色【" .. combat.list[del]["name"] .. "】成功！\n"
+    resp = "删除战斗论列表角色"..del.."【" .. combat.list[del]["name"] .. "】成功！\n"
 
-    local leng = Mod.table_leng(combat.list)
+    leng = Mod.table_leng(combat.list)
     if leng <= 1 then
         combat.round = 1
         combat.list = {}
@@ -564,8 +582,10 @@ function combatRemoveNPC(msg)
         end
     end
 
-    if del >= 1 and del <= leng then
+    if del >= 1 and del < leng then
         combat.list[del], combat.list[leng] = combat.list[leng], nil
+    elseif del == leng then
+        combat.list[leng] = nil
     else
         return "未知错误！\ndel = " .. tostring(del) .. " ; leng = " .. tostring(leng)
     end
@@ -590,3 +610,12 @@ function combatRemoveNPC(msg)
     end
     return resp
 end
+
+function combatHelp(msg)
+    local resp =   "添加战斗轮角色  .combat add ([角色名称]) ([敏捷]) ([斗殴]) \n"
+    resp = resp .. "下一角色 .combat next \n"
+    resp = resp .. "战斗轮开始|停止|清空|显示 .combat start|stop|clr|show \n"
+    resp = resp .. "删除某pl角色 .combat rm [at某PL] \n   或者 .fight rm [角色名称] \n"
+    return resp
+end
+
